@@ -10,11 +10,13 @@ import hashlib
 import json
 
 class Mode(Enum):
+    """ Access mode gives the user priviledges based on the mode."""
     READ = "read"
     WRITE = "write"
-    ADMIN = "admin"
+    ADMIN = "admin"     # we can add an auth to have admin priviledges.
 
 class SafeSQL:
+    """ Base class for Safe SQL"""
     def __init__(self, connection_string: str, mode: Mode = Mode.READ):
         self.engine = create_engine(connection_string)
         self.mode = mode
@@ -22,6 +24,7 @@ class SafeSQL:
         self.inspector = inspect(self.engine)
 
     def _setup_logger(self):
+        """ Logging using the Logger module. """
         logger = logging.getLogger('SafeSQL')
         logger.setLevel(logging.INFO)
         handler = logging.FileHandler('safe_sql.log')
@@ -31,6 +34,7 @@ class SafeSQL:
         return logger
 
     def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """ Based on the mode, we restrict the user to perform only certain queries on the DB."""
         with self.engine.begin() as connection:
             try:
                 if self.mode == Mode.READ:
@@ -48,18 +52,22 @@ class SafeSQL:
                 raise
 
     def _execute_read_query(self, connection, query, params):
+        """ Helper function to execute read query. """
         self.logger.info(f"Executing READ query: {query}")
         return connection.execute(text(query), params)
 
     def _execute_write_query(self, connection, query, params):
+        """ Helper function to execute write query. """
         self.logger.info(f"Executing WRITE query: {query}")
         return connection.execute(text(query), params)
 
     def _execute_admin_query(self, connection, query, params):
+        """ Helper function to execute admin query. """
         self.logger.warning(f"Executing ADMIN query: {query}")
         return connection.execute(text(query), params)
 
     def _execute_unsafe_query(self, connection, query, params):
+        """ Even after being flagged as unsafe, we can execute, but give user the warnings and time to rethink. """
         self._check_unsafe_query(query, connection)
         self._create_backup(connection, query)
         result = connection.execute(text(query), params)
@@ -67,6 +75,7 @@ class SafeSQL:
         return result
 
     def _check_unsafe_query(self, query: str, connection):
+        """ Check the unsafe query. Main function. """
         table_name = self._extract_table_name(query)
         
         # Get the SELECT equivalent
@@ -90,12 +99,14 @@ class SafeSQL:
             raise ValueError("Query execution cancelled by user")
 
     def _extract_table_name(self, query: str) -> str:
-        match = re.search(r'\s+(?:FROM|UPDATE|DELETE\s+FROM)\s+(\w+)', query, re.IGNORECASE)
+        """ Extract table name from the query string, used by other function."""
+        match = re.search(r'\s+(?:FROM|UPDATE|DELETE\s+FROM)\s+(\w+)', query, re.IGNORECASE) # re to the rescue.
         if match:
             return match.group(1)
         raise ValueError("Could not extract table name from query")
 
     def _get_select_equivalent(self, query: str) -> str:
+        """ Used when UPDATE and DELETE queries are used, just to have a sanity check."""
         if query.strip().upper().startswith("UPDATE"):
             table_name = self._extract_table_name(query)
             where_clause = re.search(r'WHERE\s+(.+)(?:ORDER BY|LIMIT|$)', query, re.IGNORECASE | re.DOTALL)
@@ -107,7 +118,8 @@ class SafeSQL:
             raise ValueError("Unsupported query type for SELECT equivalent")
 
     def _check_common_pitfalls(self, query: str, table_name: str, affected_rows: int):
-        if "company" in table_name.lower():
+        """ NOTE: More will be added, till now common pitfalls are supported. PRs welcome. """
+        if "company" in table_name.lower(): # assuming table has company in name.
             print("Warning: You are modifying company data. Please double-check your query.")
         if "WHERE" not in query.upper():
             print("Warning: No WHERE clause found. This will affect all rows in the table.")
@@ -117,6 +129,7 @@ class SafeSQL:
             print("Warning: Using 'WHERE column = NULL' will not work as intended. Use 'WHERE column IS NULL' instead.")
 
     def _validate_schema(self, query: str, table_name: str):
+        """ Sanity check to see whether the column name exist or not. """
         columns = self.inspector.get_columns(table_name)
         column_names = [col['name'] for col in columns]
         
@@ -127,6 +140,7 @@ class SafeSQL:
                 print(f"Warning: Column '{col_name}' not found in table '{table_name}'")
 
     def _create_backup(self, connection, query):
+        """ Utility function to cache the query results of the affected rows with timestamp. """
         table_name = self._extract_table_name(query)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_table_name = f"{table_name}_backup_{timestamp}"
@@ -140,15 +154,18 @@ class SafeSQL:
         print(f"Backup created: {backup_table_name}")
 
     def get_query_hash(self, query: str) -> str:
+        """ Similar to version hash, to have a unique signature. """
         return hashlib.md5(query.encode()).hexdigest()
 
     def cache_query_result(self, query: str, result):
-        query_hash = self.get_query_hash(query)
+        """ Save the cached query results in a JSON file. """
+        query_hash = self.get_query_hash(query) # the hash is based on the query itself, not the contents.
         cache_file = f"query_cache/{query_hash}.json"
         with open(cache_file, 'w') as f:
             json.dump(result, f)
 
     def get_cached_result(self, query: str):
+        """ Fetch the cached query results. """
         query_hash = self.get_query_hash(query)
         cache_file = f"query_cache/{query_hash}.json"
         try:
@@ -157,9 +174,11 @@ class SafeSQL:
         except FileNotFoundError:
             return None
 
+"""Command Line Interface, using Click for now, can work without it as well. """
 @click.group()
 def cli():
-    print("Are we reaching here?")
+    """ Placeholder function only, all the things are already done in the execute function. """
+    pass
 
 @cli.command()
 @click.option('--connection-string', required=True, help='Database connection string')
