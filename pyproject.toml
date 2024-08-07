@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "safe-sql"
+version = "0.1.0"
+description = "Data is gold, don't make stupid mistakes"
+authors = ["Yash Srivastava <ysrivastava82@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+click = "^8.1.7"
+sqlalchemy = "^2.0.32"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+safe_sql = "safe_sql.main:cli"
